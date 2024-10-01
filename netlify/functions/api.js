@@ -20,6 +20,16 @@ exports.handler = async (event, context) => {
     const timestamp = event.headers['x-signature-timestamp'];
     const body = event.body;
 
+    const isVerified = verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY);
+    console.log('Is request verified:', isVerified);
+
+    if (!isVerified) {
+      return {
+        statusCode: 401,
+        body: 'Invalid request signature'
+      };
+    }
+
     // 署名検証
     if (!verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY)) {
       return {
