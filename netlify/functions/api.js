@@ -1,4 +1,4 @@
-const nacl = require('tweetnacl'); // npm install tweetnacl
+const nacl = require('tweetnacl');
 require('dotenv').config();
 
 exports.handler = async (event, context) => {
