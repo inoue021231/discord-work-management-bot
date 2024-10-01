@@ -1,3 +1,16 @@
+const nacl = require('tweetnacl'); // `tweetnacl` を使って署名検証
+require('dotenv').config(); // .envから環境変数を読み込む
+
+// verifyRequest 関数を追加
+function verifyRequest(signature, timestamp, body, publicKey) {
+  // 署名の検証
+  return nacl.sign.detached.verify(
+    Buffer.from(timestamp + body),
+    Buffer.from(signature, 'hex'),
+    Buffer.from(publicKey, 'hex')
+  );
+}
+
 exports.handler = async (event, context) => {
   const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY; // Discordの公開鍵
 
@@ -7,12 +20,7 @@ exports.handler = async (event, context) => {
     const timestamp = event.headers['x-signature-timestamp'];
     const body = event.body;
 
-    // デバッグ用: 値をログ出力
-    console.log('Signature:', signature);
-    console.log('Timestamp:', timestamp);
-    console.log('Body:', body);
-
-    // Discordからのリクエストを検証
+    // 署名検証
     if (!verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY)) {
       return {
         statusCode: 401,
@@ -24,14 +32,11 @@ exports.handler = async (event, context) => {
 
     // PINGリクエストへの即時応答
     if (parsedBody.type === 1) {
-      console.log('Received PING, responding with PONG');
       return {
         statusCode: 200,
         body: JSON.stringify({ type: 1 }), // PONG応答
       };
     }
-
-    // 以下の処理で時間がかかる場合、Discord側にタイムアウトエラーが出る可能性あり
 
     // コマンド処理
     if (parsedBody.data && parsedBody.data.name === 'hello') {
