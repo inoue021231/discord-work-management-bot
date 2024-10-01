@@ -1,3 +1,16 @@
+const nacl = require('tweetnacl'); // `tweetnacl` を使って署名検証
+require('dotenv').config(); // .envから環境変数を読み込む
+
+// verifyRequest 関数を追加
+function verifyRequest(signature, timestamp, body, publicKey) {
+  // 署名の検証
+  return nacl.sign.detached.verify(
+    Buffer.from(timestamp + body),
+    Buffer.from(signature, 'hex'),
+    Buffer.from(publicKey, 'hex')
+  );
+}
+
 exports.handler = async (event, context) => {
   const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY;
 
@@ -8,7 +21,6 @@ exports.handler = async (event, context) => {
 
     // 署名検証
     const isVerified = verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY);
-    console.log('Is request verified:', isVerified);
 
     if (!isVerified) {
       return {
@@ -18,43 +30,34 @@ exports.handler = async (event, context) => {
     }
 
     const parsedBody = JSON.parse(body);
-
-    // ** PING リクエストへの即時応答 **
+    
+    console.log(parsedBody.data.name === 'hello');
+    // ** PINGリクエストへの即時応答 **
     if (parsedBody.type === 1) {
-      console.log('Received PING, responding with PONG');
       return {
         statusCode: 200,
-        body: JSON.stringify({ type: 1 }), // PONG応答
+        body: JSON.stringify({ type: 1 }),
       };
     }
 
-    // コマンド処理
-    if (parsedBody.data && parsedBody.data.name === 'hello') {
-      console.log('Received hello command');
-      return {
-        statusCode: 200,
-        body: JSON.stringify({
-          type: 4, // 4は応答メッセージのタイプ
-          data: {
-            content: 'hello world' // 返したいメッセージ内容
-          }
-        }),
-      };
-    }
+    // コマンド処理は非同期で行う
+    setImmediate(async () => {
+      console.log('Handling command:', parsedBody.data.name);
+      // 必要に応じて非同期での処理をここで行う
+    });
 
-    // 不明なコマンドが来た場合の応答
+    // すぐにレスポンスを返す
     return {
       statusCode: 200,
       body: JSON.stringify({
         type: 4,
         data: {
-          content: 'Invalid command'
+          content: 'hello world'
         }
       }),
     };
   }
 
-  // POST以外のリクエストに対する応答
   return {
     statusCode: 405,
     body: 'Method Not Allowed'
