@@ -10,14 +10,18 @@ exports.handler = async (event, context) => {
     const timestamp = event.headers['x-signature-timestamp'];
     const body = event.body;
 
-    // Discordからのリクエストを検証
+    // デバッグ用: 値をログ出力
+    console.log('Signature:', signature);
+    console.log('Timestamp:', timestamp);
+    console.log('Body:', body);
+
+    // 署名の検証
     if (!verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY)) {
       return {
         statusCode: 401,
         body: 'Invalid request signature'
       };
     }
-
     const parsedBody = JSON.parse(body);
 
     // DiscordからのPINGリクエストへの応答（初回検証用）
@@ -60,9 +64,12 @@ exports.handler = async (event, context) => {
   };
 };
 
-// リクエストの署名を検証する関数
 function verifyRequest(signature, timestamp, body, publicKey) {
-  // 署名の検証
+  if (!signature || !timestamp || !body) {
+    console.error('署名検証に必要な値が不足しています:', { signature, timestamp, body });
+    return false;
+  }
+
   return nacl.sign.detached.verify(
     Buffer.from(timestamp + body),
     Buffer.from(signature, 'hex'),
