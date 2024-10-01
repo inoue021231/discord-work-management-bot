@@ -1,6 +1,3 @@
-const nacl = require('tweetnacl');
-require('dotenv').config();
-
 exports.handler = async (event, context) => {
   const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY; // Discordの公開鍵
 
@@ -15,22 +12,26 @@ exports.handler = async (event, context) => {
     console.log('Timestamp:', timestamp);
     console.log('Body:', body);
 
-    // 署名の検証
+    // Discordからのリクエストを検証
     if (!verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY)) {
       return {
         statusCode: 401,
         body: 'Invalid request signature'
       };
     }
+
     const parsedBody = JSON.parse(body);
 
-    // DiscordからのPINGリクエストへの応答（初回検証用）
+    // PINGリクエストへの即時応答
     if (parsedBody.type === 1) {
+      console.log('Received PING, responding with PONG');
       return {
         statusCode: 200,
-        body: JSON.stringify({ type: 1 }) // PONG応答
+        body: JSON.stringify({ type: 1 }), // PONG応答
       };
     }
+
+    // 以下の処理で時間がかかる場合、Discord側にタイムアウトエラーが出る可能性あり
 
     // コマンド処理
     if (parsedBody.data && parsedBody.data.name === 'hello') {
@@ -63,16 +64,3 @@ exports.handler = async (event, context) => {
     body: 'Method Not Allowed'
   };
 };
-
-function verifyRequest(signature, timestamp, body, publicKey) {
-  if (!signature || !timestamp || !body) {
-    console.error('署名検証に必要な値が不足しています:', { signature, timestamp, body });
-    return false;
-  }
-
-  return nacl.sign.detached.verify(
-    Buffer.from(timestamp + body),
-    Buffer.from(signature, 'hex'),
-    Buffer.from(publicKey, 'hex')
-  );
-}
