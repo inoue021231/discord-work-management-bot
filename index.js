@@ -1,4 +1,6 @@
-require('dotenv').config();
+const nacl = require('tweetnacl'); // Discordの署名検証用
+const fetch = require('node-fetch');
+require('dotenv').config(); // .envファイルから環境変数を読み込む
 
 const { google } = require('googleapis');
 const serviceAccountJson = process.env.GOOGLE_SERVICE_ACCOUNT_JSON;
@@ -23,7 +25,17 @@ const sheets = google.sheets({ version: 'v4', auth });
 // スプレッドシートIDとワークシートの範囲を設定
 const spreadsheetId = process.env.SPREAD_SHEET_ID;
 
-async function addNewSheet(sheetTitle) {
+// verifyRequest関数: Discordのリクエスト署名を検証する
+function verifyRequest(signature, timestamp, body, publicKey) {
+  // 署名の検証
+  return nacl.sign.detached.verify(
+    Buffer.from(timestamp + body),
+    Buffer.from(signature, 'hex'),
+    Buffer.from(publicKey, 'hex')
+  );
+}
+
+/* async function addNewSheet(sheetTitle) {
   try {
     await sheets.spreadsheets.batchUpdate({
       spreadsheetId,
@@ -43,76 +55,173 @@ async function addNewSheet(sheetTitle) {
         ]
       }
     });
-    console.log(`新しいシート「${sheetTitle}」が作成されました。`);
+
+    // 新規シートに初期値を書き込む
+    const initialValues = [['開始時間', '終了時間', '合計時間']];
+    sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: `${sheetTitle}!A1:C1`, // A1からC1までの範囲
+      valueInputOption: 'RAW',
+      requestBody: {
+        values: initialValues,
+      },
+    });
   } catch (error) {
     console.error('エラーが発生しました:', error);
   }
-}
+} */
 
-// create
-// A列の最初に空いている行番号を取得
-async function getFirstEmptyRow(sheetName) {
-  try {
-    // A列のすべてのデータを取得
-    const response = await sheets.spreadsheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!A:A`,
-    });
+exports.handler = async (event, context) => {
+  const DISCORD_PUBLIC_KEY = process.env.DISCORD_PUBLIC_KEY; // Discordの公開鍵
 
-    // 取得したデータを確認
-    const rows = response.data.values || [];
+  if (event.httpMethod === 'POST') {
+    const signature = event.headers['x-signature-ed25519'];
+    const timestamp = event.headers['x-signature-timestamp'];
+    const body = event.body;
 
-    // 最初の空の行番号を探す
-    for (let i = 0; i < rows.length; i++) {
-      // A列の値が空（undefined, null, または空文字列）の場合、その行番号を返す
-      if (!rows[i][0]) {
-        console.log(`最初に空いている行番号は: ${i + 1}`);
-        return i + 1; // 1行目から始まるため、+1
-      }
+    // 署名の検証
+    const isVerified = verifyRequest(signature, timestamp, body, DISCORD_PUBLIC_KEY);
+
+    if (!isVerified) {
+      return {
+        statusCode: 401,
+        body: 'Invalid request signature'
+      };
     }
 
-    // 全部埋まっている場合は、次の空の行を返す
-    const emptyRow = rows.length + 1;
-    console.log(`最初に空いている行番号は: ${emptyRow}`);
-    return emptyRow;
-  } catch (error) {
-    console.error('エラーが発生しました:', error);
-  }
-}
+    const parsedBody = JSON.parse(body);
 
-// 書き込み： A1セルに「Hello World」を書き込む
-async function writeToCell() {
-  try {
-    // A1セルに値を書き込む
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: 'メインシート!A1', // ワークシート名!セル範囲
-      valueInputOption: 'RAW',
-      requestBody: {
-        values: [['Hello World']],
+    // すぐにDiscordにACKを返す
+    const response = {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
       },
-    });
-    console.log('セルに「Hello World」を書き込みました。');
+      body: JSON.stringify({ type: 5 }), // Deferred response
+    };
 
-    // 行の末尾にデータを書き込む
-    await sheets.spreadsheets.values.append({
-      spreadsheetId,
-      range: 'メインシート', // ワークシート名
-      valueInputOption: 'RAW',
-      insertDataOption: 'INSERT_ROWS',
-      requestBody: {
-        values: [
-          ['Name', 'Age', 'City'],
-          ['John Doe', 25, 'New York'],
-        ],
+    // 非同期処理で5秒待機してからフォローアップメッセージを送信
+    /* setTimeout(async () => {
+      try {
+        // DiscordのフォローアップメッセージのURL
+        const webhookUrl = `https://discord.com/api/v10/webhooks/${process.env.APP_ID}/${parsedBody.token}/messages/@original`;
+
+        // 5秒待機後にフォローアップメッセージを送信
+        await fetch(webhookUrl, {
+          method: 'PATCH', // PATCHでメッセージを更新
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            content: 'This is a follow-up message sent after 5 seconds!',
+          }),
+        });
+        console.log('Follow-up message sent');
+      } catch (error) {
+        console.error('Error sending follow-up message:', error);
+      }
+    }, 5000); // 5秒待機 */
+
+    return response;
+
+    if (parsedBody.data && parsedBody.data.name === 'newtask') {
+      /* const taskName = parsedBody.data.options.find(option => option.name === 'タスク名').value;
+      const userId = parsedBody.member.user.id;      
+
+      // 事前に必要なシートデータを1回だけ取得してキャッシュ
+      const taskSheetResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: 'タスク一覧!A:E', // A-D列を取得
+      });
+
+      const taskSheetRows = taskSheetResponse.data.values || [];
+
+      // 重複チェックおよび最初の空いている行の検索
+      let firstEmptyRow = null;
+      let valueExists = false;
+
+      for (let i = 0; i < taskSheetRows.length; i++) {
+        const rowValue = taskSheetRows[i][0];
+
+        // タスク名がすでに存在するか確認
+        if (rowValue === taskName) {
+          valueExists = true;
+          break;
+        }
+
+        // 最初の空いている行を記録
+        if (!firstEmptyRow && (!taskSheetRows[i][0] || !taskSheetRows[i][1])) {
+          firstEmptyRow = i + 1; // 行番号は1から始まる
+        }
+      }
+
+      // 重複している場合は処理を終了
+      if (valueExists) {
+        return {
+          statusCode: 200,
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            type: 4,
+            data: {
+              content: `タスク名「${taskName}」は既に存在します。別の名前を使ってください。`
+            }
+          }),
+        };
+      }
+
+      // 空いている行が見つからなかった場合、最後尾に追加
+      if (!firstEmptyRow) {
+        firstEmptyRow = taskSheetRows.length + 1;
+      }
+      
+      const taskValues = [[taskName, 0, 0, 0, userId]];
+
+      // タスクシートに値を書き込む
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `タスク一覧!A${firstEmptyRow}:E${firstEmptyRow}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: taskValues,
+        },
+      });
+
+      return {
+        statusCode: 200,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          type: 4,
+          data: {
+            content: `新規タスク「${taskName}」を作成しました。` // 返すメッセージ
+          }
+        }),
+      }; */
+    } else if(parsedBody.data && parsedBody.data.name === 'showtask') {
+      // show all or task
+    } else if(parsedBody.data && parsedBody.data.name === 'start') {
+      // start task
+    }
+
+    return {
+      statusCode: 200,
+      headers: {
+        'Content-Type': 'application/json',
       },
-    });
-    console.log('行にデータを追加しました。');
-  } catch (error) {
-    console.error('エラーが発生しました:', error);
+      body: JSON.stringify({
+        type: 4,
+        data: {
+          content: 'Invalid command'
+        }
+      }),
+    };
   }
-}
 
-// addNewSheet("newtask");
-
-getFirstEmptyRow("タスク一覧");
+  return {
+    statusCode: 405,
+    body: 'Method Not Allowed'
+  };
+};

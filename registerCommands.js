@@ -3,10 +3,19 @@ require('dotenv').config();
 
 const commands = [
   {
-    name: 'hello',
-    description: 'Replies with hello world!',
+    name: 'newtask',
+    description: 'タスク新規作成',
+    options: [
+      {
+        name: 'タスク名',
+        type: 3,
+        description: '他タスクと重複不可',
+        required: true,
+      }
+    ]
   },
 ];
+
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
