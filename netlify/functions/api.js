@@ -1,31 +1,48 @@
-const fetch = require('node-fetch'); // Webhook の送信に使用
+const fetch = require('node-fetch');
 require('dotenv').config();
 
 exports.handler = async (event, context) => {
   const parsedBody = JSON.parse(event.body);
 
-  // Discord に対する ACK の応答（3 秒以内）
   const response = {
     statusCode: 200,
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ type: 5 }), // Discord への応答
+    body: JSON.stringify({ type: 5 }),
   };
+  const commandName = parsedBody.data.name;
+  const taskName = parsedBody.data.options.find(option => option.name === 'タスク名').value;
+  const userId = parsedBody.member.user.id;
 
-  // スプレッドシートへの書き込み用データ
   const sheetData = {
-    task: "test data"
+    discordToken: parsedBody.token,
+    appId: process.env.APP_ID,
+    command: commandName,
+    task: taskName,
+    userId: userId
   };
 
-  // 非同期で 2 つ目のエンドポイントにデータを渡す
   fetch('https://discord-work-management-bot.netlify.app/.netlify/functions/writesheet', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(sheetData),
-  });
+  })
+    .then(response => {
+      if (!response.ok) {
+        console.error(`Failed to send data: ${response.status} ${response.statusText}`);
+      } else {
+        console.log('Data successfully sent to the second endpoint');
+      }
+    })
+    .catch(error => {
+      console.error('Error sending data to write-to-sheet endpoint:', error);
+    });
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
     
   return response;
 };

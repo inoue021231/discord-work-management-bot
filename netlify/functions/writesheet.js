@@ -20,12 +20,12 @@ const sheets = google.sheets({ version: 'v4', auth });
 const spreadsheetId = process.env.SPREAD_SHEET_ID;
 
 exports.handler = async (event, context) => {
-  const { task } = JSON.parse(event.body);
+  const { discordToken, appId, command, task, userId } = JSON.parse(event.body);
 
   // スプレッドシートへの書き込み
   try {
-    const range = `Sheet1!A1`; // 書き込み範囲
-    const values = [[task, new Date().toISOString()]];
+    const range = `シート1!A1`; // 書き込み範囲
+    const values = [[task, new Date().toISOString(), command, userId]];
     await sheets.spreadsheets.values.append({
       spreadsheetId,
       range,
@@ -36,11 +36,37 @@ exports.handler = async (event, context) => {
     });
 
     console.log('Successfully wrote to spreadsheet');
+
+    // 3秒待機する Promise を作成
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // 3秒待機後にフォローアップメッセージを送信
+    try {
+      const webhookUrl = `https://discord.com/api/v10/webhooks/${appId}/${discordToken}/messages/@original`;
+      const followUpResponse = await fetch(webhookUrl, {
+        method: 'PATCH', // メッセージを更新
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          content: `作成しました！`, // フォローアップメッセージ
+        }),
+      });
+
+      // レスポンスの確認
+      if (!followUpResponse.ok) {
+        console.error('Failed to send follow-up message:', followUpResponse.status, followUpResponse.statusText);
+      } else {
+        console.log('Follow-up message sent');
+      }
+    } catch (error) {
+      console.error('Error sending follow-up message:', error);
+    }
   } catch (error) {
     console.error('Error writing to spreadsheet:', error);
   }
 
-  // スプレッドシートへの書き込み後の適当なレスポンス
+  // スプレッドシートへの書き込みおよびメッセージ送信後の適当なレスポンス
   return {
     statusCode: 200,
     body: 'Data processed',
