@@ -8,14 +8,49 @@ const commands = [
     options: [
       {
         name: 'タスク名',
-        type: 3,
+        type: 3, // 文字列型
         description: '他タスクと重複不可',
         required: true,
       }
     ]
   },
+  {
+    name: 'taskstart',
+    description: 'タスク開始',
+    options: [
+      {
+        name: 'タスク名',
+        type: 3, // 文字列型
+        description: '開始するタスク名',
+        required: true,
+      }
+    ]
+  },
+  {
+    name: 'taskend',
+    description: 'タスク終了',
+    options: [
+      {
+        name: 'タスク名',
+        type: 3, // 文字列型
+        description: '終了するタスク名',
+        required: true,
+      }
+    ]
+  },
+  {
+    name: 'showtask',
+    description: 'タスク履歴を表示',
+    options: [
+      {
+        name: 'タスク名',
+        type: 3, // 文字列型
+        description: '表示するタスク名',
+        required: true,
+      }
+    ]
+  },
 ];
-
 
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 

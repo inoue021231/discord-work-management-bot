@@ -35,12 +35,11 @@ async function sendMessage(webhookUrl, message) {
   }
 }
 
-
 exports.handler = async (event, context) => {
   const { discordToken, appId, command, task, userId, userName } = JSON.parse(event.body);
   const webhookUrl = `https://discord.com/api/v10/webhooks/${appId}/${discordToken}/messages/@original`;
 
-  if(command === "newtask") {
+  if (command === "newtask") {
     try {
       // === Step 1: タスク一覧にタスクを追加 ===
       const taskSheetRange = 'タスク一覧!A:A';
@@ -170,6 +169,223 @@ exports.handler = async (event, context) => {
       };
     } catch (error) {
       console.error('Error during task creation:', error);
+      await sendMessage(webhookUrl, "エラーが発生しました。");
+      return {
+        statusCode: 200,
+        body: 'Data processed',
+      };
+    }
+  } else if (command === "taskstart") {
+    try {
+      // タスク一覧から該当のタスクを取得
+      const taskSheetRange = 'タスク一覧!A:B';
+      const taskSheetResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: taskSheetRange,
+      });
+      const taskRows = taskSheetResponse.data.values || [];
+      
+      // ユーザーが作成した該当タスクを確認
+      const taskMatch = taskRows.find(row => row[0] === task && row[1] === userId);
+      if (!taskMatch) {
+        await sendMessage(webhookUrl, `タスク名「${task}」が存在しないか、操作権限がありません。`);
+        return {
+          statusCode: 200,
+          body: 'Invalid task or no permission.',
+        };
+      }
+      
+      // 実行中タスクシートにタスクが存在するか確認
+      const execTaskRange = '実行中タスク!A:A';
+      const execTaskResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: execTaskRange,
+      });
+      const execTaskRows = execTaskResponse.data.values || [];
+      const isAlreadyRunning = execTaskRows.some(row => row[0] === task);
+
+      if (isAlreadyRunning) {
+        await sendMessage(webhookUrl, `タスク「${task}」は既に開始されています。`);
+        return {
+          statusCode: 200,
+          body: 'Task is already running.',
+        };
+      }
+
+      // 上から見て一番最初の空白行を探す
+      let firstEmptyRow = execTaskRows.length + 1;
+      for (let i = 0; i < execTaskRows.length; i++) {
+        if (!execTaskRows[i][0]) {
+          firstEmptyRow = i + 1;
+          break;
+        }
+      }
+
+      // 実行中タスクに追加
+      const now = new Date().toISOString(); // 変換せずに保存
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `実行中タスク!A${firstEmptyRow}:B${firstEmptyRow}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [[task, now]],
+        },
+      });
+
+      await sendMessage(webhookUrl, `タスク「${task}」が開始されました。`);
+      return {
+        statusCode: 200,
+        body: 'Task started.',
+      };
+    } catch (error) {
+      console.error('Error during task start:', error);
+      await sendMessage(webhookUrl, "エラーが発生しました。");
+      return {
+        statusCode: 200,
+        body: 'Data processed',
+      };
+    }
+  } else if (command === "taskend") {
+    try {
+      // 実行中タスクシートから該当タスクを取得
+      const execTaskRange = '実行中タスク!A:B';
+      const execTaskResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: execTaskRange,
+      });
+      const execTaskRows = execTaskResponse.data.values || [];
+      const execTaskMatchIndex = execTaskRows.findIndex(row => row[0] === task);
+
+      if (execTaskMatchIndex === -1) {
+        await sendMessage(webhookUrl, `タスク「${task}」は開始されていません。`);
+        return {
+          statusCode: 200,
+          body: 'Task not started.',
+        };
+      }
+
+      // 開始時刻の取得
+      const startTime = new Date(execTaskRows[execTaskMatchIndex][1]);
+      const endTime = new Date();
+      const startTimeStr = startTime.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+      const endTimeStr = endTime.toLocaleString('ja-JP', { timeZone: 'Asia/Tokyo' });
+
+      // 経過時間を計算
+      const diffTimeMs = endTime - startTime;
+      const diffDays = Math.floor(diffTimeMs / (1000 * 60 * 60 * 24));
+      const diffHours = Math.floor((diffTimeMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
+      const diffMinutes = Math.floor((diffTimeMs % (1000 * 60 * 60)) / (1000 * 60));
+      
+      // 経過時間の文字列を構成
+      let diffTimeStr = '';
+      if (diffDays > 0) diffTimeStr += `${diffDays}日`;
+      if (diffHours > 0) diffTimeStr += `${diffHours}時間`;
+      diffTimeStr += `${diffMinutes}分`;
+
+      // タスク名シートに記録
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: `${task}!A:C`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [[startTimeStr, endTimeStr, diffTimeStr]],
+        },
+      });
+
+      // 実行中タスクシートからタスクを削除
+      const deleteRowIndex = execTaskMatchIndex + 1; // スプレッドシートは1行目から開始
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: `実行中タスク!A${deleteRowIndex}:B${deleteRowIndex}`,
+        valueInputOption: 'RAW',
+        requestBody: {
+          values: [['', '']], // 空白で上書き
+        },
+      });
+
+      await sendMessage(webhookUrl, `タスク「${task}」が終了しました。合計時間: ${diffTimeStr}`);
+      return {
+        statusCode: 200,
+        body: 'Task ended.',
+      };
+    } catch (error) {
+      console.error('Error during task end:', error);
+      await sendMessage(webhookUrl, "エラーが発生しました。");
+      return {
+        statusCode: 200,
+        body: 'Data processed',
+      };
+    }
+  } else if (command === "showtask") {
+    try {
+      // タスク一覧から該当のタスクを取得
+      const taskSheetRange = 'タスク一覧!A:B';
+      const taskSheetResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: taskSheetRange,
+      });
+      const taskRows = taskSheetResponse.data.values || [];
+      
+      // ユーザーが作成した該当タスクを確認
+      const taskMatch = taskRows.find(row => row[0] === task && row[1] === userId);
+      if (!taskMatch) {
+        await sendMessage(webhookUrl, `タスク名「${task}」が存在しないか、操作権限がありません。`);
+        return {
+          statusCode: 200,
+          body: 'Invalid task or no permission.',
+        };
+      }
+
+      // タスク名シートから履歴を取得
+      const taskSheetHistoryRange = `${task}!A:C`;
+      const taskHistoryResponse = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: taskSheetHistoryRange,
+      });
+      const taskHistoryRows = taskHistoryResponse.data.values || [];
+
+      let totalMinutes = 0;
+
+      // 各行の合計時間を集計
+      let historyMessage = "【タスク履歴】\n";
+      taskHistoryRows.forEach((row, index) => {
+        if (index === 0) return; // ヘッダー行をスキップ
+
+        const startTime = row[0];
+        const endTime = row[1];
+        const duration = row[2];
+        historyMessage += `開始: ${startTime}, 終了: ${endTime}, 時間: ${duration}\n`;
+
+        // 合計時間の計算
+        const timeParts = duration.match(/(\d+)日|(\d+)時間|(\d+)分/g) || [];
+        let minutes = 0;
+        timeParts.forEach(part => {
+          if (part.includes('日')) minutes += parseInt(part) * 24 * 60;
+          if (part.includes('時間')) minutes += parseInt(part) * 60;
+          if (part.includes('分')) minutes += parseInt(part);
+        });
+        totalMinutes += minutes;
+      });
+
+      // 合計時間を文字列に変換
+      const days = Math.floor(totalMinutes / (24 * 60));
+      const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+      const minutes = totalMinutes % 60;
+
+      let totalDurationStr = "";
+      if (days > 0) totalDurationStr += `${days}日`;
+      if (hours > 0 || days > 0) totalDurationStr += `${hours}時間`;
+      totalDurationStr += `${minutes}分`;
+
+      historyMessage += `【合計時間】${totalDurationStr}`;
+
+      await sendMessage(webhookUrl, historyMessage);
+      return {
+        statusCode: 200,
+        body: 'Task history shown.',
+      };
+    } catch (error) {
+      console.error('Error during task history display:', error);
       await sendMessage(webhookUrl, "エラーが発生しました。");
       return {
         statusCode: 200,
