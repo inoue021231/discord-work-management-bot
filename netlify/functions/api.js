@@ -14,13 +14,15 @@ exports.handler = async (event, context) => {
   const commandName = parsedBody.data.name;
   const taskName = parsedBody.data.options.find(option => option.name === 'タスク名').value;
   const userId = parsedBody.member.user.id;
+  const userName = parsedBody.member.user.username;
 
   const sheetData = {
     discordToken: parsedBody.token,
     appId: process.env.APP_ID,
     command: commandName,
     task: taskName,
-    userId: userId
+    userId: userId,
+    userName: userName
   };
 
   fetch('https://discord-work-management-bot.netlify.app/.netlify/functions/writesheet', {
