@@ -175,7 +175,7 @@ exports.handler = async (event, context) => {
         body: 'Data processed',
       };
     }
-  } else if (command === "taskstart") {
+  } else if (command === "starttask") {
     try {
       // タスク一覧から該当のタスクを取得
       const taskSheetRange = 'タスク一覧!A:B';
@@ -245,7 +245,7 @@ exports.handler = async (event, context) => {
         body: 'Data processed',
       };
     }
-  } else if (command === "taskend") {
+  } else if (command === "endtask") {
     try {
       // 実行中タスクシートから該当タスクを取得
       const execTaskRange = '実行中タスク!A:B';

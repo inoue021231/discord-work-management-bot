@@ -15,7 +15,7 @@ const commands = [
     ]
   },
   {
-    name: 'taskstart',
+    name: 'starttask',
     description: 'タスク開始',
     options: [
       {
@@ -27,7 +27,7 @@ const commands = [
     ]
   },
   {
-    name: 'taskend',
+    name: 'endtask',
     description: 'タスク終了',
     options: [
       {
